@@ -544,6 +544,10 @@
             background: #c62828;
             box-shadow: 0 0 30px #c6282888;
         }
+        .result-banner.warn {
+            background: #e65100;
+            box-shadow: 0 0 30px #e6510088;
+        }
         .result-banner.four {
             background: #2e7d32;
             box-shadow: 0 0 30px #2e7d3288;
@@ -2352,6 +2356,7 @@
                 if (type === 'four') playFour();
                 else if (type === 'six') playSix();
                 else if (type === 'out') playWicket();
+                else if (type === 'warn') playWicket();
             }
 
             function startWelcomeMusic() {
@@ -3714,7 +3719,7 @@
 
         function warnFieldLimit(msg) {
             gameMsg.textContent = '⚠️ ' + msg;
-            showResultBanner('NOT ALLOWED', 'out');
+            showResultBanner('NOT ALLOWED', 'warn');
         }
 
         function updateDraggedFielderPosition(x, y) {
@@ -5214,6 +5219,11 @@
 
             spawnCelebrationEmojis();
             overlay.classList.add('show');
+            // Celebration + MOTM interview both play before showScreen()
+            // switches us to 'result-screen', so the background/crowd
+            // track needs to be started explicitly here — otherwise it
+            // stays silent for the whole celebration + interview stretch.
+            if (typeof SoundFX !== 'undefined') SoundFX.startWelcomeMusic();
 
             let finished = false;
             const finish = () => {
