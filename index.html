@@ -2376,10 +2376,36 @@
                 if (welcomeEl) { welcomeEl.pause(); welcomeEl.currentTime = 0; }
             }
 
+            // There is no separate "victory" or "crowd cheer" audio file
+            // bundled in this project (only whoosh/bathit/four/six/wicket
+            // + the one welcome/menu track exist). This approximates a
+            // cheering crowd — for the win celebration and the Man of the
+            // Match interview that follows it — by layering the existing
+            // four/six samples into a repeating festive burst pattern on
+            // top of the menu music bed, instead of reusing the plain
+            // welcome track on its own.
+            let celebrationCheerTimer = null;
+
+            function celebrationCheerBurst() {
+                fire(Math.random() < 0.5 ? 'four' : 'six');
+                setTimeout(() => fire(Math.random() < 0.6 ? 'six' : 'four'), 280);
+            }
+
+            function startCelebrationCheer() {
+                if (celebrationCheerTimer) return;
+                startWelcomeMusic();
+                celebrationCheerBurst();
+                celebrationCheerTimer = setInterval(celebrationCheerBurst, 2600);
+            }
+
+            function stopCelebrationCheer() {
+                if (celebrationCheerTimer) { clearInterval(celebrationCheerTimer); celebrationCheerTimer = null; }
+            }
+
             function setMuted(v) {
                 muted = v;
                 SFXDebug.log('setMuted(' + v + ')');
-                if (muted) stopWelcomeMusic();
+                if (muted) { stopWelcomeMusic(); stopCelebrationCheer(); }
                 init();
                 Object.values(pools).forEach(arr => arr.forEach(a => a.volume = muted ? 0 : 0.55));
                 if (welcomeEl) welcomeEl.volume = muted ? 0 : 0.35;
@@ -2401,6 +2427,7 @@
                 init, resume, isRunning, ensureAudio,
                 playWhoosh, playBatHit, playFour, playSix, playWicket,
                 playByBannerType, startWelcomeMusic, stopWelcomeMusic,
+                startCelebrationCheer, stopCelebrationCheer,
                 setMuted, isMuted, testAll,
             };
         })();
@@ -4455,6 +4482,20 @@
             // AI-batting path duplicated this, which caused a leftover timer
             // that could pop the card up after the result screen appeared).
             if (isOut && bat) {
+                // Freeze both control panels the instant a wicket is
+                // recognized — not 2.4s later when showWicketCard() actually
+                // sets wicketCardPending. Without this, there's a window
+                // between the dismissal and the card appearing (plus the
+                // card's own display time) where nothing stopped a new
+                // ball from being bowled/played. continueAfterWicket()
+                // (fired when the card closes) is solely responsible for
+                // re-enabling the correct controls afterward.
+                state.wicketCardPending = true;
+                setDpadEnabled(false);
+                setBowlDpadEnabled(false);
+                document.getElementById('bowl-controls-container').style.display = 'none';
+                document.getElementById('bat-controls-container').style.display = 'none';
+
                 const batFigure = document.getElementById('figure-batsman');
                 if (batFigure) {
                     batFigure.classList.add('walking');
@@ -4699,6 +4740,8 @@
             if (state.isAIBowling) { gameMsg.textContent = 'AI is bowling. You are batting.'; return; }
             if (state.isBallInPlay) { gameMsg.textContent = 'Ball is already in play!'; return; }
             if (!state.isAIBatting) { gameMsg.textContent = 'You are not bowling right now.'; return; }
+            if (state.wicketCardPending) { gameMsg.textContent = 'Wait for the wicket replay to finish!'; return; }
+            if (state.bowlerModalOpen) { gameMsg.textContent = '⚠️ Select a bowler first!'; return; }
 
             if (!state.currentBowler) {
                 gameMsg.textContent = '⚠️ Select a bowler first!';
@@ -4727,6 +4770,7 @@
 
         function deliverBallUser(isNoBall, speed) {
             if (state.isMatchOver) return;
+            if (state.wicketCardPending || state.bowlerModalOpen) return;
             if (!state.matchStarted) { state.matchStarted = true;
                 SoundFX.stopWelcomeMusic(); }
             runBowlerRunUp();
@@ -5159,7 +5203,10 @@
                 if (winningTeam) {
                     const mode = (winningTeam === team2) ? 'chase' : 'defend';
                     showWinCelebration(winningTeam, mode, () =>
-                        showManOfTheMatchInterview(winningTeam, () => showScreen('result-screen')));
+                        showManOfTheMatchInterview(winningTeam, () => {
+                            if (typeof SoundFX !== 'undefined') SoundFX.stopCelebrationCheer();
+                            showScreen('result-screen');
+                        }));
                 } else {
                     showScreen('result-screen'); // tied match — no celebration image to show
                 }
@@ -5220,10 +5267,12 @@
             spawnCelebrationEmojis();
             overlay.classList.add('show');
             // Celebration + MOTM interview both play before showScreen()
-            // switches us to 'result-screen', so the background/crowd
-            // track needs to be started explicitly here — otherwise it
-            // stays silent for the whole celebration + interview stretch.
-            if (typeof SoundFX !== 'undefined') SoundFX.startWelcomeMusic();
+            // switches us to 'result-screen', so the celebration audio
+            // needs to be started explicitly here — otherwise it stays
+            // silent for the whole celebration + interview stretch. Keep
+            // it running (don't stop it when the celebration overlay
+            // fades) so it continues through the MOTM interview too.
+            if (typeof SoundFX !== 'undefined') SoundFX.startCelebrationCheer();
 
             let finished = false;
             const finish = () => {
@@ -5643,6 +5692,8 @@
             if (state.isAIBowling) { gameMsg.textContent = 'AI is bowling. You are batting.'; return; }
             if (state.isBallInPlay) return;
             if (!state.isAIBatting) { gameMsg.textContent = 'You are not bowling right now.'; return; }
+            if (state.wicketCardPending) { gameMsg.textContent = 'Wait for the wicket replay to finish!'; return; }
+            if (state.bowlerModalOpen) { gameMsg.textContent = '⚠️ Select a bowler first!'; return; }
             if (!state.currentBowler) { gameMsg.textContent = '⚠️ Select a bowler first!';
                 showBowlerModal(); return; }
             if (!state.fieldSetForOver) { lockFieldForOver(); }
