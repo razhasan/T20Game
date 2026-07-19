@@ -274,38 +274,11 @@
         }
         #toss-screen {
             text-align: center;
-            background-image: linear-gradient(rgba(8, 16, 8, 0.6), rgba(8, 16, 8, 0.8)), url('assets/ui/stadium-wide.jpg');
+            background-image: linear-gradient(rgba(8, 16, 8, 0.55), rgba(8, 16, 8, 0.8)), url('assets/ui/stadium-wide.jpg');
             background-size: cover;
-            background-position: center 30%;
-            border-radius: 16px;
-            padding: 14px;
-        }
-        /* Pixi conversion — Step 3: once real character art is loaded and
-           positioned by pixi-renderer.js, fade out the old stick-figure
-           bowler/batsman rather than deleting them — same "replace, don't
-           duplicate" fix as the ball. Their JS (classList animations,
-           applyBatRestTransform, etc.) keeps running harmlessly underneath;
-           only visibility changes. Keeper/umpire stick figures are left
-           alone since there's no replacement art for them yet. */
-        .pitch-stage.pixi-chars-active .figure-bowler,
-        .pitch-stage.pixi-chars-active .figure-batsman {
-            opacity: 0;
-        }
-        #umpire-out-popup {
-            position: absolute;
-            left: 50%;
-            top: 44%;
-            width: 96px;
-            transform: translate(-50%, -50%) scale(0.6);
-            opacity: 0;
-            pointer-events: none;
-            z-index: 11;
-            filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
-            transition: opacity 0.25s ease, transform 0.25s ease;
-        }
-        #umpire-out-popup.show {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
+            background-position: center 35%;
+            border-radius: 18px;
+            padding: 18px 10px 26px;
         }
         .coin {
             font-size: 5rem;
@@ -502,6 +475,48 @@
             height: 62px;
             transform: translate(-50%, -8%);
             opacity: 0.95;
+        }
+        /* Pixi conversion — replay-only art. Deliberately small (a
+           percentage of the pitch, not a fixed px height) and offset away
+           from center so it never sits on top of the stumps, the stick
+           figures, or the result-banner text. Hidden until a delivery or
+           a four/six/wicket fires; pixi-renderer.js toggles .show and
+           picks one of the position classes below. */
+        .action-replay-popup {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            max-width: 19%;
+            max-height: 24%;
+            width: auto;
+            height: auto;
+            transform: translate(-50%, -50%) scale(0.7);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 21;
+            border-radius: 8px;
+            filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
+            transition: opacity 0.2s ease, transform 0.2s ease, left 0.2s ease, top 0.2s ease;
+        }
+        .action-replay-popup.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        /* Bowler's delivery flash — a bit right of the stumps, upper pitch. */
+        .action-replay-popup.pos-bowler {
+            left: 68%;
+            top: 28%;
+        }
+        /* Batsman's shot flash — a bit left of the stumps, lower pitch. */
+        .action-replay-popup.pos-batsman {
+            left: 30%;
+            top: 66%;
+        }
+        /* Umpire's out signal — kept well below the "OUT" result-banner
+           text (which sits at top: 38%) so neither one is hidden. */
+        .action-replay-popup.pos-umpire {
+            left: 50%;
+            top: 68%;
         }
         .result-banner {
             position: absolute;
@@ -1568,7 +1583,15 @@
                 <div class="pitch-figure figure-batsman" id="figure-batsman"></div>
                 <div class="pitch-figure figure-umpire" id="figure-umpire"></div>
                 <div class="result-banner" id="result-banner"></div>
-                <img id="umpire-out-popup" src="assets/ui/umpire-out.jpg" alt="" />
+                <!-- Pixi conversion — replay-only art: live bowling/batting
+                     keeps using the SVG stick figures above, untouched.
+                     This single image is reused for a brief photo flash —
+                     right of the stumps for the bowler's delivery, left of
+                     the stumps for the batsman's shot, and below the result
+                     banner for the umpire's out signal (so the "OUT" text
+                     is never covered). pixi-renderer.js sets src + position
+                     class and toggles .show. -->
+                <img id="action-replay-popup" class="action-replay-popup" alt="" />
                 <div id="powerplay-banner"></div>
 
                 <!-- D-Pad Batting -->
@@ -3575,16 +3598,7 @@
             showBatTrail(direction || 'middle');
         }
 
-        function triggerBatSwing(direction, callback) {
-            animateBatSwing(direction, callback);
-            // Pixi conversion — Step 3: same call site covers both the
-            // user's shots (processUserShot) and the AI's shots, so the
-            // real batsman artwork stays in sync with whoever is batting.
-            if (window.pixiRenderer && window.pixiRenderer.playBatsmanShot) {
-                try { window.pixiRenderer.playBatsmanShot(state.battingTeam, direction); }
-                catch (err) { console.warn('[pixiRenderer] playBatsmanShot error (ignored):', err); }
-            }
-        }
+        function triggerBatSwing(direction, callback) { animateBatSwing(direction, callback); }
 
         function showBatTrail(direction) {
             const svg = document.getElementById('bat-trail-svg');
@@ -3629,18 +3643,6 @@
             if (typeof SoundFX !== 'undefined') SoundFX.playByBannerType(type);
             clearTimeout(window._bannerTimeout);
             window._bannerTimeout = setTimeout(() => { el.classList.remove('show'); }, 1300);
-
-            // Pixi conversion — Step 3: umpire art pop-in on a wicket.
-            const umpEl = document.getElementById('umpire-out-popup');
-            if (umpEl) {
-                clearTimeout(window._umpirePopupTimeout);
-                if (type === 'out') {
-                    umpEl.classList.add('show');
-                    window._umpirePopupTimeout = setTimeout(() => umpEl.classList.remove('show'), 1300);
-                } else {
-                    umpEl.classList.remove('show');
-                }
-            }
 
             // Pixi conversion — Step 2 effects pack (additive, non-invasive).
             if (window.pixiRenderer && window.pixiRenderer.triggerEffect) {
@@ -4719,15 +4721,12 @@
                 const hb = document.getElementById('bowler-ball-hand');
                 if (hb) hb.style.opacity = '0';
                 if (typeof SoundFX !== 'undefined') SoundFX.playWhoosh();
+                if (window.pixiRenderer && window.pixiRenderer.playBowlerBallReplay) {
+                    try { window.pixiRenderer.playBowlerBallReplay(); }
+                    catch (err) { console.warn('[pixiRenderer] playBowlerBallReplay error (ignored):', err); }
+                }
             }, 240);
             setTimeout(() => { el.classList.remove('delivering'); }, 520);
-
-            // Pixi conversion — Step 3: same 0/240/520ms beats as above,
-            // driving the real bowler artwork instead of the stick figure.
-            if (window.pixiRenderer && window.pixiRenderer.playBowlerRunUp) {
-                try { window.pixiRenderer.playBowlerRunUp(state.bowlingTeam); }
-                catch (err) { console.warn('[pixiRenderer] playBowlerRunUp error (ignored):', err); }
-            }
         }
 
         // ================================================================

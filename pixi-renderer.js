@@ -4,22 +4,18 @@
 //  state — it is called from the end of drawPitch(), which remains
 //  the authoritative, unmodified game render.
 //
-//  STATUS:
-//   Step 2 — real ball sprite + four/six/wicket particle fx (DONE,
-//            unchanged from before)
-//   Step 3 (revised) — REPLAY-ONLY character art (DONE, this file).
-//
-//  Design change from the earlier Step 3 attempt: real character
-//  photos are NOT pinned to the pitch during live bowling/batting
-//  anymore — the SVG stick figures (#figure-bowler, #figure-batsman)
-//  keep doing exactly what they always did, completely untouched, so
-//  live play never has an oversized photo crowding the pitch.
-//
-//  Instead, real art appears only as a brief "action replay" flash —
-//  a single reused <img id="action-replay-popup"> in index.html —
-//  timed to the same four/six/wicket banner moment the game already
-//  triggers particle effects from (triggerEffect(type)). It shows for
-//  ~1.1s then fades out, and live play resumes on the stick figures.
+//  Live bowling/batting keeps using the SVG stick figures
+//  (#figure-bowler, #figure-batsman) completely untouched — real
+//  character photos only ever appear as a brief "action replay"
+//  flash via the single reused <img id="action-replay-popup">:
+//   - every delivery: bowler's release photo, offset right of the
+//     stumps (pos-bowler), fired from runBowlerRunUp()'s existing
+//     240ms "delivering" beat via playBowlerBallReplay()
+//   - four/six: batting team's follow-through photo, offset left of
+//     the stumps (pos-batsman), fired from triggerEffect()
+//   - wicket: umpire's out-signal photo, positioned below the "OUT"
+//     result-banner text so neither one covers the other (pos-umpire),
+//     fired from triggerEffect()
 // ================================================================
 
 const pixiRenderer = (function () {
@@ -27,7 +23,7 @@ const pixiRenderer = (function () {
     let world = null;
     let layers = {};
     let ready = false;
-    let charsReady = false;
+    let replayArtReady = false;
 
     const BASE_WIDTH = 500;
     const BASE_HEIGHT = 560;
@@ -39,9 +35,9 @@ const pixiRenderer = (function () {
     let layerEl = null;
     let refCanvas = null;
 
-    // Last-seen team names, cached every frame from renderMatchFrame(state)
-    // so triggerEffect(type) — which is only ever called with a plain
-    // type string, e.g. "four" — can still pick the correct team's photo.
+    // Cached every frame from renderMatchFrame(state) so triggerEffect()/
+    // playBowlerBallReplay() — called with no team argument — still pick
+    // the correct team's photo.
     let lastBattingTeam = 'india';
     let lastBowlingTeam = 'pakistan';
 
@@ -83,12 +79,8 @@ const pixiRenderer = (function () {
         ready = true;
         showBadge('Pixi ✓ (ball + fx active)');
 
-        // Preload the replay-flash images. Non-blocking and fully
-        // optional — if this fails (offline, missing files, CDN
-        // blocked), triggerEffect() below just skips the photo flash
-        // and the particle/shake effects still fire normally.
         preloadReplayImages().then(() => {
-            charsReady = true;
+            replayArtReady = true;
         }).catch((err) => {
             console.warn('[pixiRenderer] replay images failed to preload (particles/shake still work):', err);
         });
@@ -278,10 +270,6 @@ const pixiRenderer = (function () {
     }
 
     // ---- Replay-only character art -------------------------------------
-    // Only 5 images are needed for the flash: each team's batsman at the
-    // moment of impact, each team's bowler at release, and the umpire's
-    // out signal. Backlift/run-up poses aren't needed here since this is
-    // a single freeze-frame flash, not a tweened animation.
     const REPLAY_IMAGES = {
         batsman: {
             india: 'assets/batsman/india-followthrough.jpg',
@@ -308,20 +296,27 @@ const pixiRenderer = (function () {
         })));
     }
 
+    const POS_CLASSES = ['pos-bowler', 'pos-batsman', 'pos-umpire'];
     let replayHideTimer = null;
-    function playActionReplay(src, holdMs) {
+
+    function playActionReplay(src, holdMs, posClass) {
         const el = document.getElementById('action-replay-popup');
         if (!el || !src) return;
         clearTimeout(replayHideTimer);
         el.src = src;
-        // Force a reflow so re-triggering mid-flash still restarts the
-        // transition cleanly instead of no-op'ing on an unchanged class.
-        el.classList.remove('show');
-        void el.offsetWidth;
+        el.classList.remove('show', ...POS_CLASSES);
+        void el.offsetWidth; // restart transition cleanly even if re-triggered mid-flash
+        if (posClass) el.classList.add(posClass);
         el.classList.add('show');
         replayHideTimer = setTimeout(() => {
             el.classList.remove('show');
-        }, holdMs || 1100);
+        }, holdMs || 1000);
+    }
+
+    // ---- Public: called from runBowlerRunUp()'s 240ms "delivering" beat -
+    function playBowlerBallReplay() {
+        if (!replayArtReady) return;
+        playActionReplay(REPLAY_IMAGES.bowler[lastBowlingTeam], 480, 'pos-bowler');
     }
 
     // ---- Public: triggered from showResultBanner(text, type) ------------
@@ -334,19 +329,19 @@ const pixiRenderer = (function () {
                 speed: 6.5, life: 55, size: 5,
             });
             screenShake(7, 0.35);
-            if (charsReady) playActionReplay(REPLAY_IMAGES.batsman[lastBattingTeam], 1300);
+            if (replayArtReady) playActionReplay(REPLAY_IMAGES.batsman[lastBattingTeam], 1200, 'pos-batsman');
         } else if (type === 'four') {
             spawnBurst(origin.x, origin.y, {
                 count: 16, colors: [0xffffff, 0xffd54f], speed: 4, life: 35, size: 4,
             });
-            if (charsReady) playActionReplay(REPLAY_IMAGES.batsman[lastBattingTeam], 1100);
+            if (replayArtReady) playActionReplay(REPLAY_IMAGES.batsman[lastBattingTeam], 1000, 'pos-batsman');
         } else if (type === 'out') {
             spawnBurst(STUMP_POS.x, STUMP_POS.y, {
                 count: 14, colors: [0xd7ccc8, 0xbcaaa4], speed: 2.4,
                 gravity: 0.02, life: 40, size: 6, shape: 'circle', spread: Math.PI,
             });
             screenShake(9, 0.4);
-            if (charsReady) playActionReplay(REPLAY_IMAGES.umpireOut, 1300);
+            if (replayArtReady) playActionReplay(REPLAY_IMAGES.umpireOut, 1300, 'pos-umpire');
         }
     }
 
@@ -383,8 +378,9 @@ const pixiRenderer = (function () {
         init,
         renderMatchFrame,
         triggerEffect,
+        playBowlerBallReplay,
         isBallActive: () => ready,
-        isReplayArtActive: () => charsReady,
+        isReplayArtActive: () => replayArtReady,
         resize: fitStage,
         get app() { return app; },
         get layers() { return layers; },
