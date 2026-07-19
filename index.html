@@ -544,6 +544,10 @@
             background: #c62828;
             box-shadow: 0 0 30px #c6282888;
         }
+        .result-banner.warn {
+            background: #c62828;
+            box-shadow: 0 0 30px #c6282888;
+        }
         .result-banner.four {
             background: #2e7d32;
             box-shadow: 0 0 30px #2e7d3288;
@@ -3829,7 +3833,13 @@
 
         function warnFieldLimit(msg) {
             gameMsg.textContent = '⚠️ ' + msg;
-            showResultBanner('NOT ALLOWED', 'out');
+            // Use a dedicated 'warn' banner type (styled red like 'out' via CSS)
+            // instead of 'out', because showResultBanner() forwards its type
+            // straight into pixiRenderer.triggerEffect(type), which is what
+            // pops up the umpire's OUT-signal replay image. Reusing 'out' here
+            // incorrectly triggered that image for a field-placement warning
+            // that isn't an actual wicket.
+            showResultBanner('NOT ALLOWED', 'warn');
         }
 
         function updateDraggedFielderPosition(x, y) {
