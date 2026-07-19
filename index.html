@@ -2421,10 +2421,72 @@
                 currentVictoryTeam = null;
             }
 
+            // ---- Man of the Match interview music ------------------------
+            // A soft, upbeat marimba-style arpeggio, generated on the fly via
+            // the Web Audio API rather than a bundled file — deliberately a
+            // different instrument/mood from both the welcome loop and the
+            // victory fanfare so the interview has its own identity. Loops
+            // for as long as the interview overlay is showing.
+            let motmCtx = null;
+            let motmLoopTimer = null;
+            let motmPlaying = false;
+            const MOTM_NOTES = [392.00, 493.88, 587.33, 493.88, 659.25, 587.33, 493.88, 440.00]; // G4 B4 D5 B4 E5 D5 B4 A4
+            const MOTM_STEP_SEC = 0.34;
+
+            function ensureMotmCtx() {
+                if (motmCtx) return motmCtx;
+                try {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    if (!AC) return null;
+                    motmCtx = new AC();
+                } catch (e) {
+                    SFXDebug.log('MOTM AudioContext creation failed: ' + e.message);
+                    motmCtx = null;
+                }
+                return motmCtx;
+            }
+
+            function motmPluckAt(ctx, freq, when) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+                const peak = muted ? 0 : 0.11;
+                gain.gain.setValueAtTime(0.0001, when);
+                gain.gain.exponentialRampToValueAtTime(peak, when + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, when + MOTM_STEP_SEC * 0.9);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(when);
+                osc.stop(when + MOTM_STEP_SEC);
+            }
+
+            function motmScheduleLoop() {
+                if (!motmPlaying) return;
+                const ctx = ensureMotmCtx();
+                if (!ctx) return;
+                if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+                const startAt = ctx.currentTime + 0.05;
+                MOTM_NOTES.forEach((freq, i) => motmPluckAt(ctx, freq, startAt + i * MOTM_STEP_SEC));
+                motmLoopTimer = setTimeout(motmScheduleLoop, MOTM_NOTES.length * MOTM_STEP_SEC * 1000);
+            }
+
+            function playMotmMusic() {
+                if (muted || motmPlaying) return;
+                motmPlaying = true;
+                SFXDebug.log('MOTM interview music started');
+                motmScheduleLoop();
+            }
+
+            function stopMotmMusic() {
+                motmPlaying = false;
+                clearTimeout(motmLoopTimer);
+                motmLoopTimer = null;
+            }
+
             function setMuted(v) {
                 muted = v;
                 SFXDebug.log('setMuted(' + v + ')');
-                if (muted) { stopWelcomeMusic(); stopVictoryMusic(); }
+                if (muted) { stopWelcomeMusic(); stopVictoryMusic(); stopMotmMusic(); }
                 init();
                 Object.values(pools).forEach(arr => arr.forEach(a => a.volume = muted ? 0 : 0.55));
                 if (welcomeEl) welcomeEl.volume = muted ? 0 : 0.35;
@@ -2448,6 +2510,7 @@
                 playWhoosh, playBatHit, playFour, playSix, playWicket,
                 playByBannerType, startWelcomeMusic, stopWelcomeMusic,
                 playVictoryMusic, stopVictoryMusic,
+                playMotmMusic, stopMotmMusic,
                 setMuted, isMuted, testAll,
             };
         })();
@@ -4746,6 +4809,8 @@
             if (state.isAIBowling) { gameMsg.textContent = 'AI is bowling. You are batting.'; return; }
             if (state.isBallInPlay) { gameMsg.textContent = 'Ball is already in play!'; return; }
             if (!state.isAIBatting) { gameMsg.textContent = 'You are not bowling right now.'; return; }
+            if (state.wicketCardPending) { gameMsg.textContent = '⏸️ Wait for the wicket replay to finish.'; return; }
+            if (state.bowlerModalOpen) { gameMsg.textContent = '⚠️ Select a bowler first!'; return; }
 
             if (!state.currentBowler) {
                 gameMsg.textContent = '⚠️ Select a bowler first!';
@@ -5452,6 +5517,7 @@
                 finished = true;
                 clearTimeout(autoTimer);
                 overlay.classList.remove('show');
+                if (typeof SoundFX !== 'undefined') SoundFX.stopMotmMusic();
                 overlay.removeEventListener('click', handleTap);
                 skipEl.removeEventListener('click', finish);
                 setTimeout(() => { if (callback) callback(); }, 350);
@@ -5463,6 +5529,7 @@
             }
 
             overlay.classList.add('show');
+            if (typeof SoundFX !== 'undefined') SoundFX.playMotmMusic();
             overlay.addEventListener('click', handleTap);
             skipEl.addEventListener('click', finish);
             advance();
@@ -5637,6 +5704,8 @@
             if (state.isAIBowling) { gameMsg.textContent = 'AI is bowling. You are batting.'; return; }
             if (state.isBallInPlay) { gameMsg.textContent = 'Ball is already in play!'; return; }
             if (!state.isAIBatting) { gameMsg.textContent = 'You are not bowling right now.'; return; }
+            if (state.wicketCardPending) { gameMsg.textContent = '⏸️ Wait for the wicket replay to finish.'; return; }
+            if (state.bowlerModalOpen) { gameMsg.textContent = '⚠️ Select a bowler first!'; return; }
             if (!state.currentBowler) { gameMsg.textContent = '⚠️ Select a bowler first!';
                 showBowlerModal(); return; }
             userBowl();
