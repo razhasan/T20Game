@@ -966,6 +966,154 @@
         .celebration-overlay.show .celebration-skip {
             opacity: 0.9;
         }
+        /* ---- Man of the Match interview overlay ---- */
+        .motm-interview-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            overflow: hidden;
+            background: linear-gradient(160deg, #0d1f2d 0%, #16324a 55%, #0a1620 100%);
+        }
+        .motm-interview-overlay.show {
+            display: block;
+        }
+        .motm-interview-stage {
+            position: absolute;
+            inset: 0;
+            bottom: 22%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            padding: 0 4%;
+        }
+        .motm-interview-photo-wrap {
+            position: relative;
+            height: 82%;
+            display: flex;
+            align-items: flex-end;
+            opacity: 0;
+            transform: translateY(18px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        .motm-interview-overlay.show .motm-interview-photo-wrap {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .motm-interview-presenter-wrap {
+            transition-delay: 0.1s;
+        }
+        .motm-interview-player-wrap {
+            transition-delay: 0.25s;
+        }
+        .motm-interview-photo {
+            max-height: 100%;
+            max-width: 42vw;
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 10px 18px rgba(0,0,0,0.6));
+        }
+        .motm-interview-presenter-wrap .motm-interview-photo {
+            border-radius: 10px;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.15);
+        }
+        .motm-interview-name-tag {
+            position: absolute;
+            bottom: 6px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            padding: 4px 12px;
+            border-radius: 14px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #fff;
+            background: rgba(0,0,0,0.55);
+            border: 1px solid rgba(255,255,255,0.25);
+        }
+        .motm-interview-player-tag {
+            background: #1a4fa0;
+        }
+        /* Player's own tag recolors to green when it's a Pakistan MOTM —
+           toggled from JS by adding this class to the overlay. */
+        .motm-interview-overlay.motm-team-pakistan .motm-interview-player-tag {
+            background: #0f5c2e;
+        }
+        /* Subtle highlight on whoever is "speaking" in the current line. */
+        .motm-interview-photo-wrap.motm-speaking .motm-interview-photo {
+            filter: drop-shadow(0 10px 18px rgba(0,0,0,0.6)) drop-shadow(0 0 18px rgba(245,200,66,0.55));
+        }
+        .motm-interview-subtitle-box {
+            position: absolute;
+            left: 4%;
+            right: 4%;
+            bottom: 8%;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 14px;
+            padding: 12px 16px;
+            min-height: 64px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.4s ease 0.4s, transform 0.4s ease 0.4s;
+        }
+        .motm-interview-overlay.show .motm-interview-subtitle-box {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .motm-interview-speaker {
+            font-size: 0.8rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            color: #f5c842;
+            margin-bottom: 4px;
+        }
+        .motm-interview-speaker.player {
+            color: #7ed6a5;
+        }
+        .motm-interview-line {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            line-height: 1.4;
+            opacity: 0;
+            transform: translateY(6px);
+        }
+        .motm-interview-line.motm-line-in {
+            animation: motm-line-fade 0.35s ease forwards;
+        }
+        @keyframes motm-line-fade {
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .motm-interview-tap-hint {
+            position: absolute;
+            left: 0; right: 0;
+            bottom: 2.5%;
+            text-align: center;
+            font-size: 0.72rem;
+            color: rgba(255,255,255,0.55);
+            opacity: 0;
+            transition: opacity 0.5s ease 0.7s;
+        }
+        .motm-interview-overlay.show .motm-interview-tap-hint {
+            opacity: 1;
+        }
+        .motm-interview-skip {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            padding: 8px 14px;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 20px;
+            color: #fff;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.5s ease 0.6s;
+        }
+        .motm-interview-overlay.show .motm-interview-skip {
+            opacity: 0.9;
+        }
         #result-screen {
             text-align: center;
         }
@@ -1802,6 +1950,27 @@
                 <div id="celebration-submessage" class="celebration-submessage"></div>
             </div>
             <div class="celebration-skip" id="celebration-skip">Tap to continue ▶</div>
+        </div>
+
+        <!-- MAN OF THE MATCH — post-victory interview, shown after the
+             celebration overlay and before the final scorecard. -->
+        <div id="motm-interview-overlay" class="motm-interview-overlay">
+            <div class="motm-interview-stage">
+                <div class="motm-interview-photo-wrap motm-interview-presenter-wrap">
+                    <img id="motm-interview-presenter-img" class="motm-interview-photo" alt="" />
+                    <div class="motm-interview-name-tag motm-interview-presenter-tag">🎙️ Commentator</div>
+                </div>
+                <div class="motm-interview-photo-wrap motm-interview-player-wrap">
+                    <img id="motm-interview-player-img" class="motm-interview-photo" alt="" />
+                    <div class="motm-interview-name-tag motm-interview-player-tag" id="motm-interview-player-tag">🏏 Player</div>
+                </div>
+            </div>
+            <div class="motm-interview-subtitle-box">
+                <div class="motm-interview-speaker" id="motm-interview-speaker"></div>
+                <div class="motm-interview-line" id="motm-interview-line"></div>
+            </div>
+            <div class="motm-interview-tap-hint" id="motm-interview-tap-hint">Tap to continue ▶</div>
+            <div class="motm-interview-skip" id="motm-interview-skip">Skip ▶</div>
         </div>
 
         <!-- RESULT -->
@@ -5036,7 +5205,8 @@
 
                 if (winningTeam) {
                     const mode = (winningTeam === team2) ? 'chase' : 'defend';
-                    showWinCelebration(winningTeam, mode, () => showScreen('result-screen'));
+                    showWinCelebration(winningTeam, mode, () =>
+                        showManOfTheMatchInterview(winningTeam, () => showScreen('result-screen')));
                 } else {
                     showScreen('result-screen'); // tied match — no celebration image to show
                 }
@@ -5155,7 +5325,147 @@
                 <div><span>${t1.toUpperCase()}</span><span>${s1.runs}/${s1.wickets} (${overs1})</span></div>
                 <div><span>${t2.toUpperCase()}</span><span>${s2.runs}/${s2.wickets} (${overs2})</span></div>
             `;
-            showWinCelebration(winner, 'chase', () => showScreen('result-screen'));
+            showWinCelebration(winner, 'chase', () =>
+                showManOfTheMatchInterview(winner, () => showScreen('result-screen')));
+        }
+
+        // ================================================================
+        //  MAN OF THE MATCH — post-victory interview, shown after the win
+        //  celebration and before the final scorecard. Picks a random photo
+        //  from the winning MOTM's team+role pool (batting or bowling,
+        //  decided by the same weighting applyMotm() already uses to pick
+        //  the MOTM), pairs it with the presenter photo, and plays a short
+        //  scripted Q&A as tap-to-advance (or auto-advance) subtitles.
+        // ================================================================
+        const MOTM_IMAGES = {
+            india: {
+                batting: [
+                    'assets/motm/india-batting-1.png',
+                    'assets/motm/india-batting-2.png',
+                    'assets/motm/india-batting-3.png',
+                ],
+                bowling: [
+                    'assets/motm/india-bowling-1.png',
+                    'assets/motm/india-bowling-2.png',
+                ],
+            },
+            pakistan: {
+                batting: [
+                    'assets/motm/pakistan-batting-1.png',
+                    'assets/motm/pakistan-batting-2.png',
+                    'assets/motm/pakistan-batting-3.png',
+                ],
+                bowling: [
+                    'assets/motm/pakistan-bowling-1.png',
+                    'assets/motm/pakistan-bowling-2.png',
+                ],
+            },
+        };
+        const MOTM_PRESENTER_IMAGE = 'assets/motm/presenter.jpg';
+
+        function motmPickRandom(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        // Builds the 8-line interview script: 3 Q&A pairs tailored to
+        // whether the MOTM's standout performance was batting or bowling
+        // (using the real numbers from computeMotm()), then a closing
+        // thank-you exchange.
+        function buildMotmScript(role, teamLabel, name, stats) {
+            const runs = stats.runs || 0;
+            const wickets = stats.wickets || 0;
+            const lines = [];
+            if (role === 'bowling') {
+                lines.push({ speaker: 'commentator', text: 'A brilliant spell today! Take us through your bowling performance.' });
+                lines.push({ speaker: 'player', text: `Thank you! I stuck to my plans and tried to hit the right areas. Picking up ${wickets} wicket${wickets===1?'':'s'} for ${teamLabel} today feels great.` });
+                lines.push({ speaker: 'commentator', text: 'Which was your favorite wicket of the day?' });
+                lines.push({ speaker: 'player', text: "Every wicket is special, but reading the batsman's plan and hitting my areas under pressure was the key today." });
+                lines.push({ speaker: 'commentator', text: 'How does it feel to be named Man of the Match?' });
+                lines.push({ speaker: 'player', text: `It means a lot to me and to ${teamLabel}. This performance is for our fans who supported us throughout.` });
+            } else {
+                lines.push({ speaker: 'commentator', text: 'That was a match-winning knock! Talk us through your innings today.' });
+                lines.push({ speaker: 'player', text: `Thank you! I backed my instincts and just tried to bat according to the situation. Scoring ${runs} run${runs===1?'':'s'} for ${teamLabel} in a game like this feels amazing.` });
+                lines.push({ speaker: 'commentator', text: 'What was going through your mind during the big shots?' });
+                lines.push({ speaker: 'player', text: "Honestly, I just watched the ball closely and trusted my technique. Once you're in rhythm, the boundaries start coming naturally." });
+                lines.push({ speaker: 'commentator', text: 'How does it feel to be named Man of the Match?' });
+                lines.push({ speaker: 'player', text: `It's a proud moment for me and for ${teamLabel}. This trophy belongs to the whole team, not just me.` });
+            }
+            lines.push({ speaker: 'commentator', text: 'Thank you very much for your time, and congratulations again!' });
+            lines.push({ speaker: 'player', text: 'Thank you very much!' });
+            return lines;
+        }
+
+        function showManOfTheMatchInterview(winningTeam, callback) {
+            const overlay = document.getElementById('motm-interview-overlay');
+            const presenterImg = document.getElementById('motm-interview-presenter-img');
+            const playerImg = document.getElementById('motm-interview-player-img');
+            const playerTag = document.getElementById('motm-interview-player-tag');
+            const speakerEl = document.getElementById('motm-interview-speaker');
+            const lineEl = document.getElementById('motm-interview-line');
+            const skipEl = document.getElementById('motm-interview-skip');
+            const presenterWrap = document.querySelector('.motm-interview-presenter-wrap');
+            const playerWrap = document.querySelector('.motm-interview-player-wrap');
+
+            const team = (winningTeam === 'india' || winningTeam === 'pakistan') ? winningTeam : state.motmTeam;
+            if (!overlay || !presenterImg || !playerImg || !team) { if (callback) callback(); return; }
+
+            const details = state.motmDetails || { name: state.motm || 'Player', runs: 0, wickets: 0, catches: 0 };
+            const role = (state.motmRole === 'bowling') ? 'bowling' : 'batting';
+            const pool = (MOTM_IMAGES[team] && MOTM_IMAGES[team][role]) || MOTM_IMAGES[team].batting;
+            const playerSrc = motmPickRandom(pool);
+            if (!playerSrc) { if (callback) callback(); return; }
+
+            presenterImg.src = MOTM_PRESENTER_IMAGE;
+            playerImg.src = playerSrc;
+            playerTag.textContent = `🏏 ${details.name} (${team.toUpperCase()})`;
+            overlay.classList.toggle('motm-team-pakistan', team === 'pakistan');
+
+            const script = buildMotmScript(role, team.toUpperCase(), details.name, details);
+            let idx = -1;
+            let finished = false;
+            let autoTimer = null;
+
+            function showLine() {
+                const item = script[idx];
+                const isPlayer = item.speaker === 'player';
+                speakerEl.textContent = isPlayer ? `🏏 ${details.name}` : '🎙️ Commentator';
+                speakerEl.className = 'motm-interview-speaker' + (isPlayer ? ' player' : '');
+                lineEl.textContent = item.text;
+                lineEl.classList.remove('motm-line-in');
+                void lineEl.offsetWidth;
+                lineEl.classList.add('motm-line-in');
+                if (presenterWrap) presenterWrap.classList.toggle('motm-speaking', !isPlayer);
+                if (playerWrap) playerWrap.classList.toggle('motm-speaking', isPlayer);
+            }
+
+            function advance() {
+                clearTimeout(autoTimer);
+                idx++;
+                if (idx >= script.length) { finish(); return; }
+                showLine();
+                const holdMs = 2400 + Math.min(140, script[idx].text.length) * 42;
+                autoTimer = setTimeout(advance, holdMs);
+            }
+
+            function finish() {
+                if (finished) return;
+                finished = true;
+                clearTimeout(autoTimer);
+                overlay.classList.remove('show');
+                overlay.removeEventListener('click', handleTap);
+                skipEl.removeEventListener('click', finish);
+                setTimeout(() => { if (callback) callback(); }, 350);
+            }
+
+            function handleTap(e) {
+                if (e.target.closest('#motm-interview-skip')) return;
+                advance();
+            }
+
+            overlay.classList.add('show');
+            overlay.addEventListener('click', handleTap);
+            skipEl.addEventListener('click', finish);
+            advance();
         }
 
         // ================================================================
@@ -5221,6 +5531,12 @@
             const best = computeMotm(winningTeam);
             if (best) {
                 state.motm = best.name;
+                // Additive: keep the full detail + a simple role classification
+                // around for the post-victory interview screen, using the same
+                // weighting already used to pick the MOTM in the first place.
+                state.motmDetails = best;
+                state.motmRole = (best.wickets * 25 + (best.catches || 0) * 10 > best.runs) ? 'bowling' : 'batting';
+                state.motmTeam = (winningTeam === 'india' || winningTeam === 'pakistan') ? winningTeam : null;
                 document.getElementById('motm-name').textContent = best.name;
                 const parts = [];
                 if (best.runs > 0) parts.push(`${best.runs} run${best.runs>1?'s':''}`);
@@ -5231,6 +5547,9 @@
             } else {
                 const motm = state.playingXI[0] || { name: 'Player' };
                 state.motm = motm.name;
+                state.motmDetails = { name: motm.name, runs: 0, wickets: 0, catches: 0 };
+                state.motmRole = 'batting';
+                state.motmTeam = (winningTeam === 'india' || winningTeam === 'pakistan') ? winningTeam : null;
                 document.getElementById('motm-name').textContent = motm.name;
                 document.getElementById('motm-stats').textContent = '⭐ Man of the Match';
             }
