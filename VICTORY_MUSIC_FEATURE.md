@@ -54,3 +54,21 @@ paths are covered automatically.
 3. Tap "skip" during the celebration — music should stop immediately,
    not linger into the scorecard screen.
 4. Mute the game before a match ends — no victory music should play.
+
+---
+
+## Bugfix: umpire "OUT" image appearing during manual field placement
+
+**Cause:** the manual-fielding screen shows a red "NOT ALLOWED" warning
+whenever you try to drag a fielder outside the inner circle beyond the
+allowed limit. That warning was implemented by reusing the same banner
+type as a real wicket (`showResultBanner('NOT ALLOWED', 'out')`) purely
+to borrow its red styling — but `'out'` is also exactly what triggers the
+umpire wicket photo, the dust-burst particles, and the screen shake, so
+all three fired incorrectly during field placement, with no wicket having
+occurred.
+
+**Fix:** the warning now uses the banner's existing `'info'` type instead
+(already used elsewhere in the game for non-wicket notices like "DROPPED!"
+and "Over Complete") — same idea of a clear on-screen warning, but it no
+longer triggers any wicket-only effects. One line changed, nothing else.
