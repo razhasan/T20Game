@@ -3598,7 +3598,13 @@
             showBatTrail(direction || 'middle');
         }
 
-        function triggerBatSwing(direction, callback) { animateBatSwing(direction, callback); }
+        function triggerBatSwing(direction, callback) {
+            if (window.pixiRenderer && window.pixiRenderer.playBatsmanSwingReplay) {
+                try { window.pixiRenderer.playBatsmanSwingReplay(); }
+                catch (err) { console.warn('[pixiRenderer] playBatsmanSwingReplay error (ignored):', err); }
+            }
+            animateBatSwing(direction, callback);
+        }
 
         function showBatTrail(direction) {
             const svg = document.getElementById('bat-trail-svg');

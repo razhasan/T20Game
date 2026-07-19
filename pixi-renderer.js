@@ -275,6 +275,10 @@ const pixiRenderer = (function () {
             india: 'assets/batsman/india-followthrough.jpg',
             pakistan: 'assets/batsman/pakistan-followthrough.jpg',
         },
+        batsmanSwing: {
+            india: 'assets/batsman/india-backlift.jpg',
+            pakistan: 'assets/batsman/pakistan-backlift.jpg',
+        },
         bowler: {
             india: 'assets/bowler/india-release.jpg',
             pakistan: 'assets/bowler/pakistan-release.jpg',
@@ -285,6 +289,7 @@ const pixiRenderer = (function () {
     async function preloadReplayImages() {
         const urls = [
             REPLAY_IMAGES.batsman.india, REPLAY_IMAGES.batsman.pakistan,
+            REPLAY_IMAGES.batsmanSwing.india, REPLAY_IMAGES.batsmanSwing.pakistan,
             REPLAY_IMAGES.bowler.india, REPLAY_IMAGES.bowler.pakistan,
             REPLAY_IMAGES.umpireOut,
         ];
@@ -317,6 +322,17 @@ const pixiRenderer = (function () {
     function playBowlerBallReplay() {
         if (!replayArtReady) return;
         playActionReplay(REPLAY_IMAGES.bowler[lastBowlingTeam], 480, 'pos-bowler');
+    }
+
+    // ---- Public: called every time a shot is played (swing start) -------
+    // Always shows the calmer backlift/ready pose first. If the shot turns
+    // out to be a four/six, triggerEffect() below immediately overrides it
+    // with the more dynamic follow-through pose and a longer hold — so
+    // boundaries visibly look more dramatic than singles/dots, using the
+    // two poses already available per team.
+    function playBatsmanSwingReplay() {
+        if (!replayArtReady) return;
+        playActionReplay(REPLAY_IMAGES.batsmanSwing[lastBattingTeam], 450, 'pos-batsman');
     }
 
     // ---- Public: triggered from showResultBanner(text, type) ------------
@@ -379,6 +395,7 @@ const pixiRenderer = (function () {
         renderMatchFrame,
         triggerEffect,
         playBowlerBallReplay,
+        playBatsmanSwingReplay,
         isBallActive: () => ready,
         isReplayArtActive: () => replayArtReady,
         resize: fitStage,
