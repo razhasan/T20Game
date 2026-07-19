@@ -5,47 +5,45 @@
 //  the authoritative, unmodified game render.
 //
 //  STATUS:
-//   Step 2 — real ball sprite + four/six/wicket particle fx (DONE)
-//   Step 3 — real bowler/batsman character art, wired to the
-//            existing playBowlerRunUp(state.bowlingTeam) and
-//            playBatsmanShot(state.battingTeam, direction) call
-//            sites already present in index.html (DONE, this file)
+//   Step 2 — real ball sprite + four/six/wicket particle fx (DONE,
+//            unchanged from before)
+//   Step 3 (revised) — REPLAY-ONLY character art (DONE, this file).
 //
-//  Character art lives in assets/bowler/, assets/batsman/, assets/ui/
-//  as .jpg files. If any fail to load (missing file, offline, CDN
-//  blocked), the old SVG stick figures simply stay visible — this
-//  file never removes them from the DOM, it only toggles
-//  #pitch-stage's "pixi-chars-active" class once real art is
-//  confirmed ready, and CSS (index.html) fades the stick figures out
-//  only while that class is present.
+//  Design change from the earlier Step 3 attempt: real character
+//  photos are NOT pinned to the pitch during live bowling/batting
+//  anymore — the SVG stick figures (#figure-bowler, #figure-batsman)
+//  keep doing exactly what they always did, completely untouched, so
+//  live play never has an oversized photo crowding the pitch.
+//
+//  Instead, real art appears only as a brief "action replay" flash —
+//  a single reused <img id="action-replay-popup"> in index.html —
+//  timed to the same four/six/wicket banner moment the game already
+//  triggers particle effects from (triggerEffect(type)). It shows for
+//  ~1.1s then fades out, and live play resumes on the stick figures.
 // ================================================================
 
 const pixiRenderer = (function () {
     let app = null;
-    let world = null;          // everything scales/shakes together inside this
+    let world = null;
     let layers = {};
     let ready = false;
-    let charsReady = false;    // true once bowler+batsman art has loaded
+    let charsReady = false;
 
     const BASE_WIDTH = 500;
     const BASE_HEIGHT = 560;
-    // Matches the striker's stumps position computed in drawPitch()
-    // (stumpX = W*0.48, stumpY = H*0.76) — kept as a constant here since
-    // that layout is fixed, not per-frame data from `state`.
     const STUMP_POS = { x: BASE_WIDTH * 0.48 + 6, y: BASE_HEIGHT * 0.76 + 10 };
-
-    // Mirrors the CSS positions of #figure-bowler / #figure-batsman in
-    // index.html (left/top percentages), converted into the same
-    // BASE_WIDTH x BASE_HEIGHT world coordinate space the ball uses.
-    const BOWLER_POS = { x: BASE_WIDTH * 0.48, y: BASE_HEIGHT * 0.09 };
-    const BATSMAN_POS = { x: BASE_WIDTH * 0.48, y: BASE_HEIGHT * 0.70 };
 
     const basePos = { x: 0, y: 0 };
     const shakeOffset = { x: 0, y: 0 };
 
     let layerEl = null;
     let refCanvas = null;
-    let pitchStageEl = null;
+
+    // Last-seen team names, cached every frame from renderMatchFrame(state)
+    // so triggerEffect(type) — which is only ever called with a plain
+    // type string, e.g. "four" — can still pick the correct team's photo.
+    let lastBattingTeam = 'india';
+    let lastBowlingTeam = 'pakistan';
 
     async function init(containerId) {
         const container = document.getElementById(containerId);
@@ -53,13 +51,12 @@ const pixiRenderer = (function () {
         if (typeof PIXI === 'undefined') throw new Error('pixiRenderer.init: PIXI not loaded (CDN blocked?)');
 
         layerEl = container;
-        pitchStageEl = document.getElementById('pitch-stage');
         refCanvas = document.getElementById('pitch-canvas');
 
         app = new PIXI.Application();
         await app.init({
             resizeTo: container,
-            backgroundAlpha: 0,   // transparent — existing canvas/SVG stays visible underneath
+            backgroundAlpha: 0,
             antialias: true,
         });
         container.appendChild(app.canvas);
@@ -67,9 +64,6 @@ const pixiRenderer = (function () {
         world = new PIXI.Container();
         app.stage.addChild(world);
 
-        // Layer order: background < pitch < fielders < bowler < batsman
-        // < ball < stumps < fx, so the ball always draws over both
-        // characters and fx (particles/dust) always draws over everything.
         layers.background = new PIXI.Container();
         layers.pitch = new PIXI.Container();
         layers.fielders = new PIXI.Container();
@@ -87,21 +81,19 @@ const pixiRenderer = (function () {
         app.ticker.add(updateParticles);
 
         ready = true;
-        showBadge('Pixi ✓ (Step 2 — animated ball + fx)');
+        showBadge('Pixi ✓ (ball + fx active)');
 
-        // Character art loads separately and is non-blocking: if it fails,
-        // the game is completely unaffected and the SVG stick figures
-        // simply remain visible (never toggled off).
-        loadCharacterArt().then(() => {
+        // Preload the replay-flash images. Non-blocking and fully
+        // optional — if this fails (offline, missing files, CDN
+        // blocked), triggerEffect() below just skips the photo flash
+        // and the particle/shake effects still fire normally.
+        preloadReplayImages().then(() => {
             charsReady = true;
-            if (pitchStageEl) pitchStageEl.classList.add('pixi-chars-active');
-            showBadge('Pixi ✓ (Step 3 — bowler/batsman art loaded)');
         }).catch((err) => {
-            console.warn('[pixiRenderer] character art failed to load, stick figures remain active:', err);
+            console.warn('[pixiRenderer] replay images failed to preload (particles/shake still work):', err);
         });
     }
 
-    // ---- Force #pixi-layer to match #pitch-canvas's live box -------------
     function syncLayerToPitchCanvas() {
         if (!layerEl) return null;
         if (!refCanvas || !document.body.contains(refCanvas)) {
@@ -110,12 +102,10 @@ const pixiRenderer = (function () {
         if (!refCanvas) return null;
 
         const canvasRect = refCanvas.getBoundingClientRect();
-        if (!canvasRect.width || !canvasRect.height) return null; // hidden screen — try again next frame
+        if (!canvasRect.width || !canvasRect.height) return null;
 
         const offsetParent = layerEl.offsetParent;
-        const parentRect = offsetParent
-            ? offsetParent.getBoundingClientRect()
-            : canvasRect;
+        const parentRect = offsetParent ? offsetParent.getBoundingClientRect() : canvasRect;
 
         const left = canvasRect.left - parentRect.left;
         const top = canvasRect.top - parentRect.top;
@@ -130,7 +120,6 @@ const pixiRenderer = (function () {
 
     function fitStage() {
         if (!app || !world) return;
-
         const synced = syncLayerToPitchCanvas();
         const w = synced ? synced.width : app.screen.width;
         const h = synced ? synced.height : app.screen.height;
@@ -162,7 +151,7 @@ const pixiRenderer = (function () {
         badge.style.display = 'block';
     }
 
-    // ---- Ball sprite (Step 2) -------------------------------------------
+    // ---- Ball sprite -------------------------------------------------
     let ballGfx = null;
     const TRAIL_POOL_SIZE = 16;
     let trailPool = [];
@@ -172,7 +161,6 @@ const pixiRenderer = (function () {
         ballGfx = new PIXI.Graphics();
         ballGfx.visible = false;
         layers.ball.addChild(ballGfx);
-
         for (let i = 0; i < TRAIL_POOL_SIZE; i++) {
             const g = new PIXI.Graphics();
             g.visible = false;
@@ -224,7 +212,7 @@ const pixiRenderer = (function () {
         trailPool.forEach((g) => { g.visible = false; });
     }
 
-    // ---- Particle / screen-shake effects pack ----------------------------
+    // ---- Particle / screen-shake effects pack -------------------------
     let particles = [];
 
     function spawnBurst(x, y, opts) {
@@ -271,7 +259,7 @@ const pixiRenderer = (function () {
     }
 
     function screenShake(magnitude = 6, duration = 0.32) {
-        if (typeof gsap === 'undefined') { return; }
+        if (typeof gsap === 'undefined') return;
         gsap.killTweensOf(shakeOffset);
         const tl = gsap.timeline({
             onUpdate: applyWorldPosition,
@@ -289,6 +277,54 @@ const pixiRenderer = (function () {
         }
     }
 
+    // ---- Replay-only character art -------------------------------------
+    // Only 5 images are needed for the flash: each team's batsman at the
+    // moment of impact, each team's bowler at release, and the umpire's
+    // out signal. Backlift/run-up poses aren't needed here since this is
+    // a single freeze-frame flash, not a tweened animation.
+    const REPLAY_IMAGES = {
+        batsman: {
+            india: 'assets/batsman/india-followthrough.jpg',
+            pakistan: 'assets/batsman/pakistan-followthrough.jpg',
+        },
+        bowler: {
+            india: 'assets/bowler/india-release.jpg',
+            pakistan: 'assets/bowler/pakistan-release.jpg',
+        },
+        umpireOut: 'assets/ui/umpire-out.jpg',
+    };
+
+    async function preloadReplayImages() {
+        const urls = [
+            REPLAY_IMAGES.batsman.india, REPLAY_IMAGES.batsman.pakistan,
+            REPLAY_IMAGES.bowler.india, REPLAY_IMAGES.bowler.pakistan,
+            REPLAY_IMAGES.umpireOut,
+        ];
+        await Promise.all(urls.map((u) => new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(u);
+            img.onerror = () => reject(new Error('failed to load ' + u));
+            img.src = u;
+        })));
+    }
+
+    let replayHideTimer = null;
+    function playActionReplay(src, holdMs) {
+        const el = document.getElementById('action-replay-popup');
+        if (!el || !src) return;
+        clearTimeout(replayHideTimer);
+        el.src = src;
+        // Force a reflow so re-triggering mid-flash still restarts the
+        // transition cleanly instead of no-op'ing on an unchanged class.
+        el.classList.remove('show');
+        void el.offsetWidth;
+        el.classList.add('show');
+        replayHideTimer = setTimeout(() => {
+            el.classList.remove('show');
+        }, holdMs || 1100);
+    }
+
+    // ---- Public: triggered from showResultBanner(text, type) ------------
     function triggerEffect(type) {
         if (!ready) return;
         const origin = lastBallPos;
@@ -298,181 +334,35 @@ const pixiRenderer = (function () {
                 speed: 6.5, life: 55, size: 5,
             });
             screenShake(7, 0.35);
+            if (charsReady) playActionReplay(REPLAY_IMAGES.batsman[lastBattingTeam], 1300);
         } else if (type === 'four') {
             spawnBurst(origin.x, origin.y, {
                 count: 16, colors: [0xffffff, 0xffd54f], speed: 4, life: 35, size: 4,
             });
+            if (charsReady) playActionReplay(REPLAY_IMAGES.batsman[lastBattingTeam], 1100);
         } else if (type === 'out') {
             spawnBurst(STUMP_POS.x, STUMP_POS.y, {
                 count: 14, colors: [0xd7ccc8, 0xbcaaa4], speed: 2.4,
                 gravity: 0.02, life: 40, size: 6, shape: 'circle', spread: Math.PI,
             });
             screenShake(9, 0.4);
+            if (charsReady) playActionReplay(REPLAY_IMAGES.umpireOut, 1300);
         }
-    }
-
-    // ---- Character art (Step 3) ------------------------------------------
-    // File layout (relative to index.html):
-    //   assets/bowler/india-runup.jpg     assets/bowler/india-release.jpg
-    //   assets/bowler/pakistan-runup.jpg  assets/bowler/pakistan-release.jpg
-    //   assets/batsman/india-backlift.jpg      assets/batsman/india-followthrough.jpg
-    //   assets/batsman/pakistan-backlift.jpg   assets/batsman/pakistan-followthrough.jpg
-    const CHAR_ASSETS = {
-        bowler: {
-            india: { runup: 'assets/bowler/india-runup.jpg', release: 'assets/bowler/india-release.jpg' },
-            pakistan: { runup: 'assets/bowler/pakistan-runup.jpg', release: 'assets/bowler/pakistan-release.jpg' },
-        },
-        batsman: {
-            india: { backlift: 'assets/batsman/india-backlift.jpg', followthrough: 'assets/batsman/india-followthrough.jpg' },
-            pakistan: { backlift: 'assets/batsman/pakistan-backlift.jpg', followthrough: 'assets/batsman/pakistan-followthrough.jpg' },
-        },
-    };
-
-    const bowlerSprites = { india: {}, pakistan: {} };
-    const batsmanSprites = { india: {}, pakistan: {} };
-    let activeBowlerSprite = null;
-    let activeBatsmanSprite = null;
-    let bowlerRunToken = null;
-    let batsmanShotToken = null;
-
-    async function loadCharacterArt() {
-        const urls = [];
-        Object.values(CHAR_ASSETS.bowler).forEach((v) => urls.push(v.runup, v.release));
-        Object.values(CHAR_ASSETS.batsman).forEach((v) => urls.push(v.backlift, v.followthrough));
-
-        const textures = await Promise.all(urls.map((u) => PIXI.Assets.load(u)));
-        const texByUrl = {};
-        urls.forEach((u, i) => { texByUrl[u] = textures[i]; });
-
-        ['india', 'pakistan'].forEach((team) => {
-            const bCfg = CHAR_ASSETS.bowler[team];
-            bowlerSprites[team].runup = makeCharSprite(texByUrl[bCfg.runup], BOWLER_POS, 90);
-            bowlerSprites[team].release = makeCharSprite(texByUrl[bCfg.release], BOWLER_POS, 90);
-            layers.bowler.addChild(bowlerSprites[team].runup, bowlerSprites[team].release);
-
-            const sCfg = CHAR_ASSETS.batsman[team];
-            batsmanSprites[team].backlift = makeCharSprite(texByUrl[sCfg.backlift], BATSMAN_POS, 130);
-            batsmanSprites[team].followthrough = makeCharSprite(texByUrl[sCfg.followthrough], BATSMAN_POS, 130);
-            layers.batsman.addChild(batsmanSprites[team].backlift, batsmanSprites[team].followthrough);
-        });
-    }
-
-    // Builds a sprite anchored at bottom-center (feet on the crease),
-    // pre-scaled to a target on-screen height in world units.
-    function makeCharSprite(texture, pos, targetHeight) {
-        const sprite = new PIXI.Sprite(texture);
-        sprite.anchor.set(0.5, 1);
-        sprite.position.set(pos.x, pos.y);
-        const scale = targetHeight / sprite.texture.height;
-        sprite.scale.set(scale, scale);
-        sprite.visible = false;
-        sprite.alpha = 0;
-        return sprite;
-    }
-
-    function swapVisible(container, newSprite) {
-        Object.keys(container).forEach((k) => { /* no-op placeholder for clarity */ });
-    }
-
-    // ---- Public: called from runBowlerRunUp() at 0/240/520ms beats -------
-    function playBowlerRunUp(team) {
-        if (!charsReady) return;
-        team = (team === 'pakistan') ? 'pakistan' : 'india';
-        const set = bowlerSprites[team];
-        if (!set || !set.runup || !set.release) return;
-
-        const myToken = (bowlerRunToken = {});
-        // Hide the other team's bowler immediately, and the currently
-        // active sprite from any previous over.
-        ['india', 'pakistan'].forEach((t) => {
-            if (bowlerSprites[t].runup) { bowlerSprites[t].runup.visible = false; bowlerSprites[t].runup.alpha = 0; }
-            if (bowlerSprites[t].release) { bowlerSprites[t].release.visible = false; bowlerSprites[t].release.alpha = 0; }
-        });
-
-        // 0ms: run-up pose fades in, small step-in motion toward the crease.
-        set.runup.visible = true;
-        set.runup.alpha = 0;
-        set.runup.position.x = BOWLER_POS.x - 10;
-        if (typeof gsap !== 'undefined') {
-            gsap.to(set.runup, { alpha: 1, duration: 0.12 });
-            gsap.to(set.runup.position, { x: BOWLER_POS.x, duration: 0.24, ease: 'power1.out' });
-        } else {
-            set.runup.alpha = 1;
-        }
-        activeBowlerSprite = set.runup;
-
-        // 240ms: swap to the release pose (matches the 'delivering' CSS beat).
-        setTimeout(() => {
-            if (bowlerRunToken !== myToken) return;
-            set.runup.visible = false;
-            set.release.visible = true;
-            set.release.alpha = 1;
-            set.release.position.x = BOWLER_POS.x;
-            activeBowlerSprite = set.release;
-        }, 240);
-
-        // ~700ms: fade the release pose back out so the bowler isn't stuck
-        // standing at the crease once the ball is already in play.
-        setTimeout(() => {
-            if (bowlerRunToken !== myToken) return;
-            if (typeof gsap !== 'undefined') {
-                gsap.to(set.release, { alpha: 0, duration: 0.25, onComplete: () => { set.release.visible = false; } });
-            } else {
-                set.release.visible = false;
-            }
-        }, 700);
-    }
-
-    // ---- Public: called from triggerBatSwing() on every shot -------------
-    function playBatsmanShot(team, direction) {
-        if (!charsReady) return;
-        team = (team === 'pakistan') ? 'pakistan' : 'india';
-        const set = batsmanSprites[team];
-        if (!set || !set.backlift || !set.followthrough) return;
-
-        const myToken = (batsmanShotToken = {});
-        ['india', 'pakistan'].forEach((t) => {
-            if (batsmanSprites[t].backlift) { batsmanSprites[t].backlift.visible = false; }
-            if (batsmanSprites[t].followthrough) { batsmanSprites[t].followthrough.visible = false; }
-        });
-
-        let lateral = 0;
-        if (direction === 'left') lateral = -18;
-        else if (direction === 'right') lateral = 18;
-
-        // Backlift shown immediately (mirrors bat animation start).
-        set.backlift.visible = true;
-        set.backlift.alpha = 1;
-        set.backlift.position.x = BATSMAN_POS.x;
-
-        // ~140ms (roughly the 0.4 point of the 350ms swing): swap to
-        // follow-through with a small lateral shift matching shot direction.
-        setTimeout(() => {
-            if (batsmanShotToken !== myToken) return;
-            set.backlift.visible = false;
-            set.followthrough.visible = true;
-            set.followthrough.alpha = 1;
-            set.followthrough.position.x = BATSMAN_POS.x + lateral;
-            if (typeof gsap !== 'undefined') {
-                gsap.fromTo(set.followthrough.scale,
-                    { x: set.followthrough.scale.x * 1.05, y: set.followthrough.scale.y * 1.05 },
-                    { x: set.followthrough.scale.x, y: set.followthrough.scale.y, duration: 0.18 });
-            }
-        }, 140);
-
-        // ~600ms: settle back to the idle backlift pose, ready for next ball.
-        setTimeout(() => {
-            if (batsmanShotToken !== myToken) return;
-            set.followthrough.visible = false;
-            set.backlift.visible = true;
-            set.backlift.position.x = BATSMAN_POS.x;
-        }, 600);
     }
 
     // ---- Public: called once per frame from the end of drawPitch() ------
     function renderMatchFrame(state) {
         if (!ready || !app) return;
         fitStage();
+
+        if (state) {
+            if (state.battingTeam === 'india' || state.battingTeam === 'pakistan') {
+                lastBattingTeam = state.battingTeam;
+            }
+            if (state.bowlingTeam === 'india' || state.bowlingTeam === 'pakistan') {
+                lastBowlingTeam = state.bowlingTeam;
+            }
+        }
 
         if (state && state.ball && typeof state.ball.x === 'number') {
             positionBallAndTrail(state.ball);
@@ -493,10 +383,8 @@ const pixiRenderer = (function () {
         init,
         renderMatchFrame,
         triggerEffect,
-        playBowlerRunUp,
-        playBatsmanShot,
         isBallActive: () => ready,
-        isCharArtActive: () => charsReady,
+        isReplayArtActive: () => charsReady,
         resize: fitStage,
         get app() { return app; },
         get layers() { return layers; },
