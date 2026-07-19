@@ -866,6 +866,106 @@
             font-size: 0.9rem;
         }
 
+        /* Win celebration overlay — full-screen photo + emoji rain shown
+           briefly before the result screen. z-index above everything
+           else in the app (screens are typically < 100). */
+        .celebration-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            overflow: hidden;
+            background: #000;
+        }
+        .celebration-overlay.show {
+            display: block;
+        }
+        .celebration-image {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transform: scale(1.06);
+            transition: opacity 0.6s ease, transform 6s ease;
+        }
+        .celebration-overlay.show .celebration-image {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .celebration-shade {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.65) 100%);
+        }
+        .celebration-emojis {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .celebration-emoji-particle {
+            position: absolute;
+            top: -60px;
+            font-size: 2rem;
+            animation-name: celebration-fall;
+            animation-timing-function: ease-in;
+            animation-fill-mode: forwards;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+        }
+        @keyframes celebration-fall {
+            0%   { transform: translateY(0) rotate(0deg); opacity: 0; }
+            10%  { opacity: 1; }
+            100% { transform: translateY(115vh) rotate(360deg); opacity: 0.9; }
+        }
+        .celebration-text {
+            position: absolute;
+            left: 0; right: 0;
+            bottom: 9%;
+            text-align: center;
+            padding: 0 16px;
+        }
+        .celebration-message {
+            font-size: 2rem;
+            font-weight: 900;
+            color: #ffd54f;
+            text-shadow: 0 3px 10px rgba(0,0,0,0.8), 0 0 24px rgba(255,213,79,0.5);
+            opacity: 0;
+            transform: translateY(14px);
+            transition: opacity 0.5s ease 0.3s, transform 0.5s ease 0.3s;
+        }
+        .celebration-submessage {
+            margin-top: 8px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #fff;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+            opacity: 0;
+            transform: translateY(14px);
+            transition: opacity 0.5s ease 0.5s, transform 0.5s ease 0.5s;
+        }
+        .celebration-overlay.show .celebration-message,
+        .celebration-overlay.show .celebration-submessage {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .celebration-skip {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            padding: 8px 14px;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 20px;
+            color: #fff;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.5s ease 0.6s;
+        }
+        .celebration-overlay.show .celebration-skip {
+            opacity: 0.9;
+        }
         #result-screen {
             text-align: center;
         }
@@ -1686,6 +1786,22 @@
                 <button class="btn btn-secondary" id="btn-reset-game" style="flex:1;">🔄 Reset</button>
             </div>
             <div id="game-message">Select your team and start.</div>
+        </div>
+
+        <!-- WIN CELEBRATION — full-screen overlay shown briefly right
+             before the result screen, using a real celebration photo
+             matched to who won and how (defending a total = fielding
+             team photo, chasing a target = the two batsmen photo).
+             Auto-dismisses into the result screen; also tap-to-skip. -->
+        <div id="celebration-overlay" class="celebration-overlay">
+            <img id="celebration-image" class="celebration-image" alt="" />
+            <div class="celebration-shade"></div>
+            <div id="celebration-emojis" class="celebration-emojis"></div>
+            <div class="celebration-text">
+                <div id="celebration-message" class="celebration-message">🎉 Congratulations! 🎉</div>
+                <div id="celebration-submessage" class="celebration-submessage"></div>
+            </div>
+            <div class="celebration-skip" id="celebration-skip">Tap to continue ▶</div>
         </div>
 
         <!-- RESULT -->
@@ -4864,9 +4980,84 @@
                     <div><span>${state.innings1Team.toUpperCase()}</span><span>${s1.runs}/${s1.wickets} (${overs1})</span></div>
                     <div><span>${state.innings2Team.toUpperCase()}</span><span>${s2.runs}/${s2.wickets} (${overs2})</span></div>
                 `;
-                showScreen('result-screen');
                 state.isMatchOver = true;
+
+                if (winningTeam) {
+                    const mode = (winningTeam === team2) ? 'chase' : 'defend';
+                    showWinCelebration(winningTeam, mode, () => showScreen('result-screen'));
+                } else {
+                    showScreen('result-screen'); // tied match — no celebration image to show
+                }
             }
+        }
+
+        // ================================================================
+        //  WIN CELEBRATION — full-screen photo + emoji rain, shown for a
+        //  while before the final scorecard. Picks one of the 4 supplied
+        //  images based on winning team + whether they won defending a
+        //  total (fielding team photo) or chasing one down (batsmen photo).
+        // ================================================================
+        const CELEBRATION_IMAGES = {
+            india: { defend: 'assets/celebration/india-team-win.jpg', chase: 'assets/celebration/india-batsmen-win.jpg' },
+            pakistan: { defend: 'assets/celebration/pakistan-team-win.jpg', chase: 'assets/celebration/pakistan-batsmen-win.jpg' },
+        };
+        const CELEBRATION_EMOJIS = ['🎉', '🏆', '🎊', '✨', '🙌', '🥳'];
+        const CELEBRATION_HOLD_MS = 14000;
+
+        function spawnCelebrationEmojis() {
+            const host = document.getElementById('celebration-emojis');
+            if (!host) return;
+            host.innerHTML = '';
+            const count = 26;
+            for (let i = 0; i < count; i++) {
+                const span = document.createElement('span');
+                span.className = 'celebration-emoji-particle';
+                span.textContent = CELEBRATION_EMOJIS[Math.floor(Math.random() * CELEBRATION_EMOJIS.length)];
+                const left = Math.random() * 100;
+                const duration = 3.2 + Math.random() * 2.6;
+                const delay = Math.random() * CELEBRATION_HOLD_MS / 1000 * 0.7;
+                const size = 1.4 + Math.random() * 1.6;
+                span.style.left = left + '%';
+                span.style.fontSize = size + 'rem';
+                span.style.animationDuration = duration + 's';
+                span.style.animationDelay = delay + 's';
+                span.style.animationIterationCount = 'infinite';
+                host.appendChild(span);
+            }
+        }
+
+        function showWinCelebration(winningTeam, mode, callback) {
+            const overlay = document.getElementById('celebration-overlay');
+            const imgEl = document.getElementById('celebration-image');
+            const msgEl = document.getElementById('celebration-message');
+            const subEl = document.getElementById('celebration-submessage');
+            const skipEl = document.getElementById('celebration-skip');
+
+            const src = CELEBRATION_IMAGES[winningTeam] && CELEBRATION_IMAGES[winningTeam][mode];
+            if (!overlay || !imgEl || !src) { if (callback) callback(); return; }
+
+            imgEl.src = src;
+            msgEl.textContent = `🎉 Congratulations ${winningTeam.toUpperCase()}! 🎉`;
+            subEl.textContent = (mode === 'defend')
+                ? 'Won defending the total!'
+                : 'Won chasing down the target!';
+
+            spawnCelebrationEmojis();
+            overlay.classList.add('show');
+
+            let finished = false;
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                clearTimeout(autoTimer);
+                overlay.classList.remove('show');
+                skipEl.removeEventListener('click', finish);
+                overlay.removeEventListener('click', finish);
+                setTimeout(() => { if (callback) callback(); }, 350); // let fade-out finish
+            };
+            const autoTimer = setTimeout(finish, CELEBRATION_HOLD_MS);
+            skipEl.addEventListener('click', finish);
+            overlay.addEventListener('click', finish);
         }
 
         // ================================================================
@@ -4906,7 +5097,7 @@
                 <div><span>${t1.toUpperCase()}</span><span>${s1.runs}/${s1.wickets} (${overs1})</span></div>
                 <div><span>${t2.toUpperCase()}</span><span>${s2.runs}/${s2.wickets} (${overs2})</span></div>
             `;
-            showScreen('result-screen');
+            showWinCelebration(winner, 'chase', () => showScreen('result-screen'));
         }
 
         // ================================================================
