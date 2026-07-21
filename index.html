@@ -714,6 +714,52 @@
             margin: 0;
         }
 
+        /* ---- D-Pad auto-hide (collapse to an edge tab when unused) ---- */
+        #dpad-container,
+        #bowl-dpad-container {
+            transition: transform 0.28s ease, opacity 0.2s;
+        }
+        #dpad-container.dpad-collapsed {
+            transform: translateY(-50%) translateX(calc(100% + 10px));
+        }
+        #bowl-dpad-container.dpad-collapsed {
+            transform: translateX(calc(-100% - 10px));
+        }
+        .dpad-edge-tab {
+            position: fixed;
+            z-index: 41;
+            width: 24px;
+            height: 56px;
+            background: rgba(245, 200, 66, 0.9);
+            color: #1a2e3f;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.05rem;
+            font-weight: 800;
+            cursor: pointer;
+            touch-action: manipulation;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+            transition: 0.15s;
+        }
+        .dpad-edge-tab:active {
+            transform: scale(0.9);
+        }
+        #dpad-edge-tab {
+            right: max(0px, calc(50vw - 250px));
+            top: 50%;
+            transform: translateY(-50%);
+            border-radius: 10px 0 0 10px;
+        }
+        #dpad-edge-tab:active {
+            transform: translateY(-50%) scale(0.9);
+        }
+        #bowl-dpad-edge-tab {
+            left: max(0px, calc(50vw - 250px));
+            top: 18%;
+            border-radius: 0 10px 10px 0;
+        }
+
         /* ---- Impact grid ---- */
         .impact-grid {
             display: grid;
@@ -1274,6 +1320,11 @@
                 min-height: 28px;
                 font-size: 0.65rem;
                 padding: 3px 4px;
+            }
+            .dpad-edge-tab {
+                width: 20px;
+                height: 46px;
+                font-size: 0.9rem;
             }
         }
         .howto-box {
@@ -1895,6 +1946,10 @@
                     <button class="dpad-btn" id="bowl-dpad-off">➡️ Off</button>
                     <button class="dpad-btn bowl-dpad-go" id="bowl-dpad-go">⚡ BOWL</button>
                 </div>
+
+                <!-- Edge tabs: reveal a collapsed D-pad on tap (Fix 1) -->
+                <div class="dpad-edge-tab" id="dpad-edge-tab">◀</div>
+                <div class="dpad-edge-tab" id="bowl-dpad-edge-tab">▶</div>
             </div>
 
             <!-- Field controls -->
@@ -4005,16 +4060,69 @@
         // ================================================================
         //  DPAD HELPERS
         // ================================================================
+        // Fix 1: both D-pads stay collapsed to a small edge tab by default so
+        // the pitch/ground is fully visible. Tapping the tab reveals the pad;
+        // it auto-collapses again after a few seconds of no use, and it also
+        // collapses immediately the moment the user touches the canvas
+        // directly (tap-to-bowl / drag-to-bat), since that means they're not
+        // using the pad right now.
+        const DPAD_AUTO_HIDE_MS = 3000;
+        const dpadHideTimers = {};
+
+        function collapseDpad(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.add('dpad-collapsed');
+            clearTimeout(dpadHideTimers[id]);
+        }
+
+        function scheduleDpadHide(id) {
+            clearTimeout(dpadHideTimers[id]);
+            dpadHideTimers[id] = setTimeout(() => collapseDpad(id), DPAD_AUTO_HIDE_MS);
+        }
+
+        function expandDpad(id) {
+            const el = document.getElementById(id);
+            if (!el || el.classList.contains('dpad-disabled')) return;
+            el.classList.remove('dpad-collapsed');
+            scheduleDpadHide(id);
+        }
+
+        function collapseAllDpads() {
+            collapseDpad('dpad-container');
+            collapseDpad('bowl-dpad-container');
+        }
+
+        document.getElementById('dpad-edge-tab').addEventListener('click', () => expandDpad('dpad-container'));
+        document.getElementById('bowl-dpad-edge-tab').addEventListener('click', () => expandDpad(
+            'bowl-dpad-container'));
+
+        // Using any button inside an expanded pad counts as "in use" — reset
+        // its auto-hide timer instead of letting it vanish mid-interaction.
+        ['dpad-container', 'bowl-dpad-container'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('click', () => {
+                if (!el.classList.contains('dpad-collapsed')) scheduleDpadHide(id);
+            });
+        });
+
         function setDpadEnabled(enabled) {
             const dpad = document.getElementById('dpad-container');
+            const tab = document.getElementById('dpad-edge-tab');
             if (!dpad) return;
             dpad.classList.toggle('dpad-disabled', !enabled);
+            if (tab) tab.style.display = enabled ? 'flex' : 'none';
+            collapseDpad('dpad-container');
         }
 
         function setBowlDpadEnabled(enabled) {
             const dpad = document.getElementById('bowl-dpad-container');
+            const tab = document.getElementById('bowl-dpad-edge-tab');
             if (!dpad) return;
             dpad.classList.toggle('dpad-disabled', !enabled);
+            if (tab) tab.style.display = enabled ? 'flex' : 'none';
+            collapseDpad('bowl-dpad-container');
         }
 
         function selectImpactZone(line, length) {
@@ -4292,6 +4400,10 @@
         }
 
         function startDrag(e, canvasX, canvasY) {
+            // Fix 1: touching the pitch directly (tap-to-bowl / drag-to-bat)
+            // means the D-pads aren't being used right now — hide them so
+            // the ground is unobstructed.
+            collapseAllDpads();
             const rect = canvas.getBoundingClientRect();
             const x = canvasX !== undefined ? canvasX : (e.clientX - rect.left) / rect.width * canvas.width;
             const y = canvasY !== undefined ? canvasY : (e.clientY - rect.top) / rect.height * canvas.height;
