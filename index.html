@@ -4543,9 +4543,14 @@
                         `${result.runs} runs (${timing})`;
                 }
                 // AI reacts to a boundary by covering that gap for future balls
+                // and adapting its bowling so it doesn't repeat the same
+                // line/length that just got smashed (Fix 2).
                 if (!isOut && (result.runs === 4 || result.runs === 6) && !state.isAIBatting) {
                     adjustFieldForBoundary(result.landingX, result.landingY);
-                    gameMsg.textContent += ' — AI tightens the field to cover that gap!';
+                    if (ball.impactLine && ball.impactLength) {
+                        recordBoundaryAgainstAI(ball.impactLine, ball.impactLength, result.runs);
+                    }
+                    gameMsg.textContent += ' — AI tightens the field and changes bowling tactics!';
                     drawPitch();
                 }
                 finishBattingTurn(result.runs, isOut, result.outType, result.isDrop, result.catcher, result
@@ -4851,6 +4856,60 @@
         // ================================================================
         //  AI BOWLING (user batting)
         // ================================================================
+        // ================================================================
+        //  ADAPTIVE AI BOWLING (Fix 2)
+        // ================================================================
+        // After the user smashes a four/six off the AI's bowling, the AI
+        // steers away from repeating that exact line/length for the next
+        // couple of deliveries instead of bowling the same ball again. On
+        // top of that, medium/hard bowl more often to the tougher-to-score
+        // areas (a good-length ball on off/middle) in general, on top of
+        // the existing difficulty scaling on how easily those shots go for
+        // runs (see getDiff().userRunBonus / userCatchMult).
+        function recordBoundaryAgainstAI(line, length, runs) {
+            if (!line || !length) return;
+            state.aiBowlMemory = state.aiBowlMemory || {};
+            state.aiBowlMemory.avoidLine = line;
+            state.aiBowlMemory.avoidLength = length;
+            // A six earns a longer memory than a four.
+            state.aiBowlMemory.cooldown = runs === 6 ? 3 : 2;
+        }
+
+        function weightedPick(items, weights) {
+            const total = weights.reduce((a, b) => a + b, 0);
+            let r = Math.random() * total;
+            for (let i = 0; i < items.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return items[i];
+            }
+            return items[items.length - 1];
+        }
+
+        function pickAiLineAndLength() {
+            const accuracy = state.difficulty === 'hard' ? 0.65 :
+                state.difficulty === 'easy' ? 0.15 : 0.4;
+
+            const lengths = ['full', 'good', 'short'];
+            const lengthWeights = lengths.map(l => l === 'good' ? (1 + accuracy * 2) : 1);
+
+            const lines = ['off', 'middle', 'leg'];
+            const lineWeights = lines.map(l => (l === 'off' || l === 'middle') ? (1 + accuracy * 1.2) : 1);
+
+            const mem = state.aiBowlMemory;
+            if (mem && mem.cooldown > 0) {
+                // Length is the biggest factor in getting punished, so lean
+                // away from it hardest; nudge the line away too.
+                const avoidLenIdx = lengths.indexOf(mem.avoidLength);
+                if (avoidLenIdx >= 0) lengthWeights[avoidLenIdx] *= 0.15;
+                const avoidLineIdx = lines.indexOf(mem.avoidLine);
+                if (avoidLineIdx >= 0) lineWeights[avoidLineIdx] *= 0.5;
+                mem.cooldown -= 1;
+            }
+
+            state.impactLength = weightedPick(lengths, lengthWeights);
+            state.impactLine = weightedPick(lines, lineWeights);
+        }
+
         function aiBowling() {
             if (state.isMatchOver || !state.isAIBowling) return;
             if (!state.matchStarted) { state.matchStarted = true;
@@ -4864,10 +4923,10 @@
             const fastVars = ['normal', 'swing-in', 'swing-out', 'reverse', 'leg-cutter', 'off-cutter'];
             const spinVars = ['normal', 'googly', 'doosra', 'carrom'];
             state.variation = random(state.bowlType === 'fast' ? fastVars : spinVars);
-            const lineRoll = Math.random();
-            state.impactLine = lineRoll < 0.28 ? 'leg' : (lineRoll < 0.72 ? 'middle' : 'off');
-            const lengths = ['full', 'good', 'short'];
-            state.impactLength = random(lengths);
+            // Fix 2: adaptive line/length instead of a pure coin-flip — see
+            // pickAiLineAndLength() for the difficulty scaling + "don't repeat
+            // the ball that just got hit for four/six" logic.
+            pickAiLineAndLength();
             const speed = 20 + Math.random() * 60;
             const isNoBall = Math.random() < 0.07;
 
@@ -6013,6 +6072,7 @@
         state.bowlType = 'fast';
         state.impactLine = 'middle';
         state.impactLength = 'good';
+        state.aiBowlMemory = { avoidLine: null, avoidLength: null, cooldown: 0 };
         setDpadEnabled(false);
         setBowlDpadEnabled(false);
         animate();
